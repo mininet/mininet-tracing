@@ -1,0 +1,13 @@
+
+To start perf tracing:
+
+$ perf sched record sleep 2
+.. wait 2 seconds
+
+Pretty time-series visualisation of process activity on all cores:
+
+$ perf sched map
+
+Also check:
+
+$ perf sched latency

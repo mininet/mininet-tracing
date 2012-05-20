@@ -1,0 +1,17 @@
+
+Trace context switches and print to the kernel ring buffer.  This
+script continuously clears the ring buffer and redirects to
+mntrace.txt output file.
+
+The tracer automatically filters and prints context switches between
+different cgroups (that are containers in Mininet).  It would be nice
+to correlate this information with whatever happens in sch_htb.
+
+You can run sch_htb modified to enable tracing, and mntracer.ko at the
+same time:
+
+$ cd htb; rmmod sch_htb; insmod ./sch_htb.ko traced_iface=sw1-eth1
+$ cd kmod;
+ - Start your mininet experiment, wait for it to initialise
+ - ./run.sh
+ - Press C-c to stop
