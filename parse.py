@@ -27,6 +27,11 @@ parser.add_argument('--odir',
                     default='.',
                     dest="odir")
 
+parser.add_argument('--max-ms',
+                    type=float,
+                    default=1e6,
+                    dest="max_ms")
+
 args = parser.parse_args()
 
 pat_sched = re.compile(r'(\d+.\d+)  cpu: (\d+), prev: ([^,]+), next: ([^\s]+)')
@@ -272,8 +277,10 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
         plt.xticks(range(1,nx+1), xlabels)
         plt.yscale('log')
         plt.ylabel(metric)
+        plt.ylim((0, args.max_ms))
     else:
         plt.xlabel(metric)
+        plt.xlim((0, args.max_ms))
         plt.xscale('log')
         plt.ylabel("Fraction")
         plt.legend(loc="lower right")
