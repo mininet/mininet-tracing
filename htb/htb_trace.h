@@ -7,21 +7,23 @@
 
 #include <linux/tracepoint.h>
 
-TRACE_EVENT(mn_htb_dequeue,
+TRACE_EVENT(mn_htb,
 
-            TP_PROTO(const char *link),
+            TP_PROTO(const char *action, const char *link),
 
-            TP_ARGS(link),
+            TP_ARGS(action, link),
 
             TP_STRUCT__entry(
+                             __array(char, action, 32)
                              __array(char, link, 32)
                              ),
 
             TP_fast_assign(
+                           strncpy(__entry->action, action, 32);
                            strncpy(__entry->link, link, 32);
                            ),
 
-            TP_printk("link: %s", __entry->link)
+            TP_printk("action: %s, link: %s", __entry->action, __entry->link)
             );
 
 #endif
