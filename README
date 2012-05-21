@@ -23,6 +23,9 @@ NEW!!
 Improved tracing
 ================
 
+From the command line
+---------------------
+
 $ cd kmod; make; insmod ./mntracer.ko
 
 - Does not pollute syslog with printk messages.
@@ -32,17 +35,52 @@ To enable tracing, just do:
 $ cd /sys/kernel/debug/tracing
 $ cat current_tracer
 
-- If it's nop, it's fine.  Out custom tracing will print information
-  regardless of any other active tracing
+- If it's nop, it's fine.  Our custom tracing will print information
+  regardless of any other tracing that's active.
 
 $ grep mininet available_events
-
-- Should show you mininet:mn_sched_switch
+mininet:mn_htb
+mininet:mn_sched_switch
 
 - To start tracing:
-$ echo "mininet:*" > set_event
 $ echo 1 > events/mininet/enable
 $ cat trace_pipe > /tmp/trace-output
 
 - To stop tracing
 $ echo 0 > events/mininet/enable
+
+
+Bash helper functions
+---------------------
+
+Here are bash helper functions that you can add to mininet experiment
+shell scripts.  Make sure you call the functions!
+
+trace_start() {
+	traceoutput=${1-/tmp/mntrace}
+	pushd /sys/kernel/debug/tracing
+
+	# Enable ALL mininet events
+	echo 1 > events/mininet/enable
+
+	# Other events of interest
+	for event in softirq_{raise,entry,exit}; do
+		echo 1 > events/irq/$event/enable
+	done
+
+	# Enable tracing
+	echo 1 > tracing_enabled
+
+	echo "Writing trace to $traceoutput"
+	(cat trace_pipe > $traceoutput &)
+	popd
+}
+
+trace_stop() {
+	pushd /sys/kernel/debug/tracing
+	echo 0 > tracing_enabled
+	echo 0 > events/mininet/enable
+	echo "Finishing trace"
+	wait
+	popd
+}
