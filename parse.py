@@ -214,10 +214,10 @@ def cdf(values):
 
 
 def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
-    plt.figure(figsize=(16*3, 8))
-
     links = stats.keys()
     links.sort()
+
+    fig = plt.figure(figsize=(len(links), 8))
 
     metric += ' (us)'
 
@@ -243,6 +243,8 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
         title = outfile
     plt.title(title)
     plt.grid(True)
+    fig.autofmt_xdate()
+
     print outfile
     plt.savefig(outfile)
 
@@ -251,7 +253,8 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
     keys = kvs.keys()
     keys.sort()
 
-    plt.figure()
+    fig = plt.figure(figsize=(len(keys), 8))
+
     l = len(keys)
     xvalues = []
     xlabels = []
@@ -293,6 +296,7 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
     if title is None:
         title = outfile
     plt.title(title)
+    fig.autofmt_xdate()
 
     print outfile
     plt.savefig(outfile)
