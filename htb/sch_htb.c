@@ -43,6 +43,9 @@
 #include <linux/tcp.h>
 #include <linux/ip.h>
 
+#define CREATE_TRACE_POINTS
+#include "htb_trace.h"
+
 /* HTB algorithm.
     Author: devik@cdi.cz
     ========================================================================
@@ -559,33 +562,6 @@ static inline void htb_deactivate(struct htb_sched *q, struct htb_class *cl)
 	list_del_init(&cl->un.leaf.drop_list);
 }
 
-static void print_skb(struct sk_buff *skb, char *msg) {
-    if(!skb)
-      return;
-    struct ethhdr *ethh = (struct ethhdr *)(skb->data);
-    struct iphdr *iph = NULL;
-    struct tcphdr *tcph = NULL;
-
-    if(ethh && ethh->h_proto == __constant_htons(ETH_P_IP)) {
-        iph = ((char *)skb->data) + sizeof(struct ethhdr);
-        if(iph->protocol == IPPROTO_TCP)
-          tcph = ((char *)skb->data) + sizeof(struct ethhdr) + (iph->ihl * 4);
-        else
-          return;
-    } else {
-      return;
-    }
-
-    if(iph && tcph && skb && skb->dev && traced_iface != NULL && strcmp(skb->dev->name, traced_iface) == 0) {
-        struct timespec ts;
-        getnstimeofday(&ts);
-        printk(KERN_INFO "%s time %llu.%llu src %pI4  dst %pI4  sport %d  dport %d\n",
-               msg, (u64)ts.tv_sec, (u64)ts.tv_nsec,
-               &iph->saddr, &iph->daddr,
-               htons(tcph->source), htons(tcph->dest));
-    }
-}
-
 static int htb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 {
 	int uninitialized_var(ret);
@@ -620,7 +596,6 @@ static int htb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
         // Ans: looks like qdisc_enqueue will end up freeing the packet
         // if enqueue failed.  So we should incr refcnt before calling qdisc_enqueue...
 #if OFBUF
-        print_skb(skb, "OFBUF");
         __skb_queue_tail(&q->ofbuf, skb);
         q->ofbuf_queued++;
 #else
@@ -639,7 +614,6 @@ static int htb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 #endif
 	}
 
-    print_skb(skb, "ENQUEUE");
 	sch->q.qlen++;
 	return NET_XMIT_SUCCESS;
 }
@@ -930,7 +904,10 @@ ok:
 		qdisc_bstats_update(sch, skb);
 		qdisc_unthrottled(sch);
 		sch->q.qlen--;
-        print_skb(skb, "DEQUEUE");
+
+        /* This shouldn't be, but just in case... */
+        if(skb->dev != NULL)
+            trace_mn_htb_dequeue(skb->dev->name);
 #if OFBUF
         if(q->ofbuf_queued > 0) {
             i = 0;
