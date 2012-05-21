@@ -67,3 +67,10 @@ trace_stop() {
 	wait
 	popd
 }
+
+trace_plot() {
+	# Path to the plotting script in mininet-trace repo
+	parse=../parse.py
+	traceoutput=${1-/tmp/mntrace}
+	python $parse -f $traceoutput --odir $(dirname $traceoutput)/plots
+}
