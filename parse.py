@@ -169,17 +169,26 @@ def del_ns(t1, t2):
 def parse(f):
     stats = defaultdict(CPUStats)
     linkstats = LinkStats()
+
+    lineno = 0
+    ignored_linenos = []
+
     for l in open(f).xreadlines():
+        lineno += 1
         sched = parse_sched(l)
         htb = parse_htb(l)
 
-        if htb:
-            if htb.action == 'DEQUEUE':
-                linkstats.dequeue(htb)
+        try:
+            if htb:
+                if htb.action == 'DEQUEUE':
+                    linkstats.dequeue(htb)
 
-        if sched:
-            stats[sched.cpu].insert(sched)
+            if sched:
+                stats[sched.cpu].insert(sched)
+        except:
+            ignored_linenos.append(lineno)
 
+    print 'Ignored %d lines: %s' % (len(ignored_linenos), ignored_linenos)
     for cpu in sorted(stats.keys()):
         print 'CPU: %s' % cpu
         stats[cpu].summary()
