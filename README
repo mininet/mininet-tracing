@@ -15,3 +15,34 @@ $ cd kmod;
  - Start your mininet experiment, wait for it to initialise
  - ./run.sh
  - Press C-c to stop
+
+~~~~~
+NEW!!
+~~~~~
+
+Improved tracing
+================
+
+$ cd kmod; make; insmod ./mntracer.ko
+
+- Does not pollute syslog with printk messages.
+
+To enable tracing, just do:
+
+$ cd /sys/kernel/debug/tracing
+$ cat current_tracer
+
+- If it's nop, it's fine.  Out custom tracing will print information
+  regardless of any other active tracing
+
+$ grep mininet available_events
+
+- Should show you mininet:mn_sched_switch
+
+- To start tracing:
+$ echo "mininet:*" > set_event
+$ echo 1 > events/mininet/enable
+$ cat trace_pipe > /tmp/trace-output
+
+- To stop tracing
+$ echo 0 > events/mininet/enable
