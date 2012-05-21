@@ -39,6 +39,8 @@ Here are bash helper functions that you can add to mininet experiment
 shell scripts.  Make sure you call the functions!
 
 trace_start() {
+	# argument: pass the path to save trace output
+
 	traceoutput=${1-/tmp/mntrace}
 	pushd /sys/kernel/debug/tracing
 
@@ -56,7 +58,7 @@ trace_start() {
 	popd
 
 	echo "Writing trace to $traceoutput"
-	(cat trace_pipe > $traceoutput &)
+	(cat /sys/kernel/debug/tracing/trace_pipe > $traceoutput &)
 }
 
 trace_stop() {
@@ -70,6 +72,8 @@ trace_stop() {
 
 trace_plot() {
 	# Path to the plotting script in mininet-trace repo
+	# argument: pass the path to saved trace output
+
 	parse=../parse.py
 	traceoutput=${1-/tmp/mntrace}
 	python $parse -f $traceoutput --odir $(dirname $traceoutput)/plots
