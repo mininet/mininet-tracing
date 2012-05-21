@@ -13,13 +13,6 @@
 
 #include "mntracer.h"
 
-static void probe_softirq_entry(void *ignore,
-                                unsigned int nr)
-{
-    if(net_ratelimit())
-        printk(KERN_INFO "sirq nr %u invoked\n", nr);
-}
-
 static inline const char *get_cgroup_name(struct task_struct *tsk) {
     struct css_set *css;
     struct cgroup_subsys_state *subsys;
@@ -70,9 +63,6 @@ static int __init mntracer_init(void)
 {
 	int ret;
 
-	ret = register_trace_softirq_entry(probe_softirq_entry, NULL);
-	WARN_ON(ret);
-
 	ret = register_trace_sched_switch(probe_sched_switch, NULL);
 	WARN_ON(ret);
 	return 0;
@@ -80,7 +70,6 @@ static int __init mntracer_init(void)
 
 static void __exit mntracer_exit(void)
 {
-	unregister_trace_softirq_entry(probe_softirq_entry, NULL);
 	unregister_trace_sched_switch(probe_sched_switch, NULL);
 	tracepoint_synchronize_unregister();
 }
