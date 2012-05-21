@@ -11,6 +11,7 @@
 #include <linux/time.h>
 #include <net/net_namespace.h>
 
+#define CREATE_TRACE_POINTS
 #include "mntracer.h"
 
 static inline const char *get_cgroup_name(struct task_struct *tsk) {
@@ -44,18 +45,14 @@ static void probe_sched_switch(void *ignore,
                                struct task_struct *prev, struct task_struct *next)
 {
     const char *old, *new;
-    struct timespec ns;
 
     old = get_cgroup_name(prev);
     new = get_cgroup_name(next);
 
-    /* TODO: need a better way to store this.  Maybe tcp_probe.c can
-       teach us how. */
+    /* This is a filtered event trace, so we can use ftrace in sysfs
+       to count these events */
     if(old != new) {
-        getnstimeofday(&ns);
-        printk(KERN_INFO "%llu.%llu  cpu: %d, prev: %s, next: %s\n",
-               (u64)ns.tv_sec, (u64)ns.tv_nsec,
-               smp_processor_id(), old, new);
+        trace_mn_sched_switch(smp_processor_id(), old, new);
     }
 }
 
