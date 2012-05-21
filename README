@@ -71,9 +71,10 @@ trace_start() {
 	# Enable tracing
 	echo 1 > tracing_enabled
 
+	popd
+
 	echo "Writing trace to $traceoutput"
 	(cat trace_pipe > $traceoutput &)
-	popd
 }
 
 trace_stop() {
