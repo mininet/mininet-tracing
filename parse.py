@@ -34,11 +34,11 @@ parser.add_argument('--max-ms',
 
 args = parser.parse_args()
 
-pat_sched = re.compile(r'(\d+.\d+)  cpu: (\d+), prev: ([^,]+), next: ([^\s]+)')
-pat_htb = re.compile(r'(ENQUEUE|DEQUEUE|OFBUF) time (\d+.\d+) src ([\d\.]+)  dst ([\d\.]+)')
+pat_sched = re.compile(r'(\d+.\d+): mn_sched_switch: cpu (\d+), prev: ([^,]+), next: ([^\s]+)')
+pat_htb = re.compile(r'(\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+)')
 
 SchedData = namedtuple('SchedData', ['time', 'cpu', 'prev', 'next'])
-HTBData = namedtuple('HTBData', ['action', 'time', 'src', 'dst'])
+HTBData = namedtuple('HTBData', ['time', 'action', 'link'])
 
 def avg(lst):
     return sum(lst) * 1.0 / len(lst)
@@ -53,7 +53,7 @@ class LinkStats:
             self.last_dequeue = htbdata.time
             return
 
-        delta = del_ns(htbdata.time, self.last_dequeue)
+        delta = del_us(htbdata.time, self.last_dequeue)
         self.inter_dequeues.append(delta)
         self.last_dequeue = htbdata.time
 
@@ -72,7 +72,7 @@ class ContainerStats:
         assert(self.name == sched_data.next)
 
         if self.last_descheduled != None:
-            latency = del_ns(sched_data.time, self.last_descheduled)
+            latency = del_us(sched_data.time, self.last_descheduled)
             self.latency.append(latency)
 
         if 0:
@@ -99,17 +99,17 @@ class ContainerStats:
             self.name = sched_data.prev
 
         if self.start_time is not None:
-            exectime = del_ns(sched_data.time, self.start_time)
+            exectime = del_us(sched_data.time, self.start_time)
             self.exectimes.append(exectime)
 
         self.last_descheduled = sched_data.time
         self.start_time = None
 
     def summary(self):
-        avg_latency_ns = avg(self.latency)
-        avg_exectime_ns = avg(self.exectimes)
-        print '     Execution time:   %5.3f us' % (avg_exectime_ns / 1000.0)
-        print '            Latency:   %5.3f us' % (avg_latency_ns / 1000.0)
+        avg_latency_us = avg(self.latency)
+        avg_exectime_us = avg(self.exectimes)
+        print '     Execution time:   %5.3f us' % (avg_exectime_us)
+        print '            Latency:   %5.3f us' % (avg_latency_us)
         return
 
 class CPUStats:
@@ -160,20 +160,19 @@ def parse_htb(line):
     m = pat_htb.search(line)
     if not m:
         return None
-    return HTBData(action=m.group(1),
-                   time=m.group(2),
-                   src=m.group(3),
-                   dst=m.group(4))
+    return HTBData(time=m.group(1),
+                   action=m.group(2),
+                   link=m.group(3))
 
-def del_ns(t1, t2):
-    sec1, nsec1 = map(int, t1.split('.'))
-    sec2, nsec2 = map(int, t2.split('.'))
+def del_us(t1, t2):
+    sec1, usec1 = map(int, t1.split('.'))
+    sec2, usec2 = map(int, t2.split('.'))
 
-    return abs((sec2 - sec1) * 10**9 + (nsec2 - nsec1))
+    return abs((sec2 - sec1) * 10**6 + (usec2 - usec1))
 
 def parse(f):
     stats = defaultdict(CPUStats)
-    linkstats = LinkStats()
+    linkstats = defaultdict(LinkStats)
 
     lineno = 0
     ignored_linenos = []
@@ -185,8 +184,8 @@ def parse(f):
 
         try:
             if htb:
-                if htb.action == 'DEQUEUE':
-                    linkstats.dequeue(htb)
+                if htb.action == 'dequeue':
+                    linkstats[htb.link].dequeue(htb)
 
             if sched:
                 stats[sched.cpu].insert(sched)
@@ -214,30 +213,36 @@ def cdf(values):
     return (x, y)
 
 
-def plot_link_stat(stats, kind, outfile, metric, title=None):
-    # TODO: Extend tracer to trace ALL dequeues in the system, and
-    # hence plot this for all links
-    plt.figure()
+def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
+    plt.figure(figsize=(16*3, 8))
 
-    # Convert from ns to us
-    stats = map(lambda ns: ns/1e3, stats)
+    links = stats.keys()
+    links.sort()
+
     metric += ' (us)'
 
-    if kind == 'CDF':
-        x, y = cdf(stats)
-        plt.plot(x, y, lw=2)
-        plt.xscale('log')
-        plt.xlabel(metric)
-    else:
-        plt.boxplot(stats)
-        plt.xticks([1], "link")
+    xvalues = []
+    for i, link in enumerate(links):
+        if kind == 'CDF':
+            x, y = cdf(getattr(stats[link], prop))
+            plt.plot(x, y, lw=2, label=link)
+            plt.xscale('log')
+            plt.xlabel(metric)
+        else:
+            xvalues.append(getattr(stats[link], prop))
+
+    if kind == 'boxplot':
+        plt.boxplot(xvalues)
+        plt.xticks(range(1, 1+len(links)), links)
         plt.yscale('log')
         plt.ylabel(metric)
+    else:
+        plt.legend(loc="lower right")
+
+    if title is None:
+        title = outfile
+    plt.title(title)
     plt.grid(True)
-
-    if title:
-        plt.title(title)
-
     print outfile
     plt.savefig(outfile)
 
@@ -255,10 +260,10 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
         if k in exclude_keys:
             continue
 
-        us_values = map(lambda ns: ns/1e6,
+        ms_values = map(lambda us: us/1e3,
                         kvs[k])
         if kind == 'CDF':
-            x, y = cdf(us_values)
+            x, y = cdf(ms_values)
 
             hue = i*1.0/l
             plt.plot(x, y,
@@ -266,7 +271,7 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
                      lw=2,
                      color=colorsys.hls_to_rgb(hue, 0.5, 1.0))
         else:
-            xvalues.append(us_values)
+            xvalues.append(ms_values)
             xlabels.append(k)
 
     plt.grid(True)
@@ -311,12 +316,13 @@ def plot(containerstats, linkstats):
                                     outfile,
                                     metric=prop)
 
-    # plot specific link's inter-dequeue time
+    # plot all links' inter-dequeue times
     for kind in kinds:
         for prop in ['inter_dequeues']:
             outfile = 'link-%s-%s.png' % (prop, kind)
             outfile = os.path.join(args.odir, outfile)
-            plot_link_stat(getattr(linkstats, prop),
+            plot_link_stat(linkstats,
+                           prop,
                            kind, outfile, metric=prop)
     return
 
