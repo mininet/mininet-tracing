@@ -64,8 +64,11 @@ trace_start() {
 trace_stop() {
 	pushd /sys/kernel/debug/tracing
 	echo 0 > tracing_enabled
+	echo 0 > tracing_on
 	echo 0 > events/mininet/enable
-	echo "Finishing trace"
+	echo "Flushing trace"
+	cat trace_pipe > /dev/null
+	echo "Finishing..."
 	wait
 	popd
 }
