@@ -32,6 +32,10 @@ parser.add_argument('--max-ms',
                     default=1e6,
                     dest="max_ms")
 
+parser.add_argument('--samples',
+                    type=int,
+                    default=0)
+
 args = parser.parse_args()
 
 pat_sched = re.compile(r'(\d+.\d+): mn_sched_switch: cpu (\d+), prev: ([^,]+), next: ([^\s]+)')
@@ -182,6 +186,10 @@ def parse(f):
         sched = parse_sched(l)
         htb = parse_htb(l)
 
+        # End early if samples param given at command line.
+        if args.samples and lineno >= args.samples:
+            break
+
         try:
             if htb:
                 if htb.action == 'dequeue':
@@ -216,6 +224,10 @@ def cdf(values):
 def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
     links = stats.keys()
     links.sort()
+
+    if not links:
+        print "WARNING: no link data, not generating figure %s." % outfile
+        return
 
     fig = plt.figure(figsize=(len(links), 8))
 
