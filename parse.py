@@ -50,6 +50,10 @@ parser.add_argument('--duration',
                     type=float,
                     default=None)
 
+parser.add_argument('--absolute',
+                    action="store_true",
+                    default=False)
+
 parser.add_argument('--plots',
                     type=str,
                     default=None,
@@ -236,7 +240,7 @@ def del_us(t1, t2):
 
 def parse(f, args):
 
-    def in_range(time_val, start, end, duration):
+    def in_range(time_val, start, end, duration, start_time=0.0):
         """Return True if time is within range.
 
         If nothing is specified, filter nothing.
@@ -244,6 +248,9 @@ def parse(f, args):
         If end is specified, filter after end.
         If duration is specified, filter after start + duration.
         """
+
+        # Make time relative to start of trace
+        time_val -= start_time
         if start is not None:
             if time_val < start:
                 return False
@@ -257,9 +264,13 @@ def parse(f, args):
 
     stats = defaultdict(CPUStats)
     linkstats = defaultdict(LinkStats)
+    start_time = None
 
     lineno = 0
     ignored_linenos = []
+
+    if args.absolute:
+        start_time = 0.0
 
     for l in open(f).xreadlines():
         lineno += 1
@@ -270,24 +281,30 @@ def parse(f, args):
         sched = parse_sched(l)
         htb = parse_htb(l)
 
+        if start_time is None:
+            if htb:
+                start_time = float(htb.time)
+            elif sched:
+                start_time = float(sched.time)
+
         try:
             if htb:
                 htb_time = float(htb.time)
-                if in_range(htb_time, args.start, args.end, args.duration):
+                if in_range(htb_time, args.start, args.end, args.duration, start_time):
                     if htb.action == 'dequeue' and int(htb.qlen) > 0:
                         linkstats[htb.link].dequeue(htb)
-                elif args.end and (htb_time > args.end):
+                elif args.end and (htb_time - start_time > args.end):
                     break
-                elif args.duration and (htb_time > (args.start + args.duration)):
+                elif args.duration and (htb_time - start_time > (args.start + args.duration)):
                     break
 
             if sched:
                 sched_time = float(sched.time)
-                if in_range(sched_time, args.start, args.end, args.duration):
+                if in_range(sched_time, args.start, args.end, args.duration, start_time):
                     stats[sched.cpu].insert(sched)
-                elif args.end and (sched_time > args.end):
+                elif args.end and (sched_time - start_time> args.end):
                     break
-                elif args.duration and (sched_time > (args.start + args.duration)):
+                elif args.duration and (sched_time - start_time > (args.start + args.duration)):
                     break
 
         except:
