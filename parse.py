@@ -35,10 +35,10 @@ parser.add_argument('--max-ms',
 args = parser.parse_args()
 
 pat_sched = re.compile(r'(\d+.\d+): mn_sched_switch: cpu (\d+), prev: ([^,]+), next: ([^\s]+)')
-pat_htb = re.compile(r'(\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+)')
+pat_htb = re.compile(r'\[00(\d)\] (\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+), len: ([^\s]+)')
 
 SchedData = namedtuple('SchedData', ['time', 'cpu', 'prev', 'next'])
-HTBData = namedtuple('HTBData', ['time', 'action', 'link'])
+HTBData = namedtuple('HTBData', ['cpu', 'time', 'action', 'link', 'qlen'])
 
 def avg(lst):
     return sum(lst) * 1.0 / len(lst)
@@ -160,9 +160,11 @@ def parse_htb(line):
     m = pat_htb.search(line)
     if not m:
         return None
-    return HTBData(time=m.group(1),
-                   action=m.group(2),
-                   link=m.group(3))
+    return HTBData(cpu=m.group(1),
+                   time=m.group(2),
+                   action=m.group(3),
+                   link=m.group(4),
+                   qlen=m.group(5))
 
 def del_us(t1, t2):
     sec1, usec1 = map(int, t1.split('.'))
@@ -184,12 +186,13 @@ def parse(f):
 
         try:
             if htb:
-                if htb.action == 'dequeue':
+                if htb.action == 'dequeue' and int(htb.qlen) > 0:
                     linkstats[htb.link].dequeue(htb)
 
             if sched:
                 stats[sched.cpu].insert(sched)
-        except:
+        except Exception, e:
+            print 'error %s' % str(e)
             ignored_linenos.append(lineno)
 
     print 'Ignored %d lines: %s' % (len(ignored_linenos), ignored_linenos)
@@ -197,6 +200,7 @@ def parse(f):
         print 'CPU: %s' % cpu
         stats[cpu].summary()
         print '-' * 80
+
     return stats, linkstats
 
 def cdf(values):
