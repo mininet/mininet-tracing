@@ -599,7 +599,7 @@ static int htb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
         __skb_queue_tail(&q->ofbuf, skb);
         q->ofbuf_queued++;
         if(skb->dev != NULL)
-            trace_mn_htb("ofbuf", skb->dev->name);
+            trace_mn_htb("ofbuf", skb->dev->name, q->ofbuf_queued);
 
 #else
 		if (net_xmit_drop_count(ret)) {
@@ -618,7 +618,7 @@ static int htb_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 	}
 
     if(skb->dev != NULL)
-        trace_mn_htb("enqueue", skb->dev->name);
+        trace_mn_htb("enqueue", skb->dev->name, 1+sch->q.qlen);
 
 	sch->q.qlen++;
 	return NET_XMIT_SUCCESS;
@@ -913,7 +913,7 @@ ok:
 
         /* This shouldn't be, but just in case... */
         if(skb->dev != NULL)
-            trace_mn_htb("dequeue", skb->dev->name);
+            trace_mn_htb("dequeue", skb->dev->name, sch->q.qlen);
 #if OFBUF
         if(q->ofbuf_queued > 0) {
             i = 0;

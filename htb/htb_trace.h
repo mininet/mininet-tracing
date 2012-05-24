@@ -9,21 +9,23 @@
 
 TRACE_EVENT(mn_htb,
 
-            TP_PROTO(const char *action, const char *link),
+            TP_PROTO(const char *action, const char *link, int len),
 
             TP_ARGS(action, link),
 
             TP_STRUCT__entry(
                              __array(char, action, 32)
                              __array(char, link, 32)
+                             __field(int, len)
                              ),
 
             TP_fast_assign(
                            strncpy(__entry->action, action, 32);
                            strncpy(__entry->link, link, 32);
+                           __entry->len = len;
                            ),
 
-            TP_printk("action: %s, link: %s", __entry->action, __entry->link)
+            TP_printk("action: %s, link: %s, len: %d", __entry->action, __entry->link, __entry->len)
             );
 
 #endif
