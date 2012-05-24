@@ -367,7 +367,7 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
         print "WARNING: no link data, not generating figure %s." % outfile
         return
 
-    fig = plt.figure(figsize=(len(links), 8))
+    fig = plt.figure(figsize=(max(8, len(links)), 8))
 
     metric += ' (us)'
 
@@ -405,7 +405,7 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
     keys = kvs.keys()
     keys.sort()
 
-    fig = plt.figure(figsize=(len(keys), 8))
+    fig = plt.figure(figsize=(max(8, len(keys)), 8))
 
     l = len(keys)
     xvalues = []
