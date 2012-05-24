@@ -77,8 +77,8 @@ FIXED_COLOR_MAP = {
     'h1': 'r',
     'h2': 'g',
     'r': 'b',
-    'sysdefault': '#d0d0d0',
-    '/' : '#b0b0b0'
+    'sysdefault': '#e0e0ff',
+    '/' : '#efefef'
 }
 USE_FIXED_COLOR_MAP = True
 
