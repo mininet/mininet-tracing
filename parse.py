@@ -38,12 +38,25 @@ parser.add_argument('--samples',
 
 args = parser.parse_args()
 
+# For coloring scheduling histories:
+COLOR_LIST = [c for c in 'bgrcmy']
+
+FIXED_COLOR_MAP = {
+    'h1': 'r',
+    'h2': 'g',
+    'r': 'b',
+    'sysdefault': '#d0d0d0',
+    '/' : '#b0b0b0'
+}
+USE_FIXED_COLOR_MAP = True
+
 pat_sched = re.compile(r'(\d+.\d+): mn_sched_switch: cpu (\d+), prev: ([^,]+), next: ([^\s]+)')
 pat_htb = re.compile(r'(\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+)')
 
 SchedData = namedtuple('SchedData', ['time', 'cpu', 'prev', 'next'])
 HTBData = namedtuple('HTBData', ['time', 'action', 'link'])
 ContainerInterval = namedtuple('ContainerInterval', ['start', 'duration', 'cpu'])
+
 
 def avg(lst):
     return sum(lst) * 1.0 / len(lst)
@@ -110,7 +123,7 @@ class ContainerStats:
         if self.start_time is not None:
             exectime_us = del_us(sched_data.time, self.start_time)
             self.exectimes.append(exectime_us)
-            pi = ContainerInterval(start = self.start_time,
+            pi = ContainerInterval(start = float(self.start_time),
                                  duration = exectime_us * 1.0e-6,
                                  cpu = sched_data.cpu)
             self.intervals.append(pi)
@@ -328,6 +341,63 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
     print outfile
     plt.savefig(outfile)
 
+WIDTH_SCALE_FACTOR = 20  # inches of figure per second of recording.
+
+def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf', 'png']):
+    container_index = 0
+    colors = {}  # Dict of container names to color strings
+
+    if USE_FIXED_COLOR_MAP:
+        colors = FIXED_COLOR_MAP
+    # Grab the full list of containers to assign colors.
+    for cpu, cpustats in containerstats.iteritems():
+        for container, stats in cpustats.container_stats.iteritems():
+            if container not in colors:
+                colors[container] = COLOR_LIST[container_index]
+                container_index += 1
+
+    start_time = 1e10
+    end_time = 0.0
+    for cpu, cpustats in containerstats.iteritems():
+        for container, stats in cpustats.container_stats.iteritems():
+            start_time_candidate = stats.intervals[0].start
+            if start_time_candidate < start_time:
+                start_time = start_time_candidate
+            end_time_candidate = stats.intervals[-1].start + stats.intervals[-1].duration
+            if end_time_candidate > end_time:
+                end_time = end_time_candidate
+
+    elapsed = end_time - start_time
+    print "Start: %0.2f, end: %0.2f, length: %0.4f" % (start_time, end_time, elapsed)
+
+    # Plot a history of scheduling events, with one row per CPU.
+    fig = plt.figure(figsize=(WIDTH_SCALE_FACTOR * elapsed, 8))
+    ax = fig.add_subplot(111)
+    for i, cpu in enumerate(sorted(containerstats.keys())):
+        cpustats = containerstats[cpu]
+        for container, stats in cpustats.container_stats.iteritems():
+            bars = [(d.start, d.duration) for d in stats.intervals]
+            ax.broken_barh(bars, (0.5 + i, 1), facecolors = colors[container],
+                           label = container, linewidth = 0)
+
+    numcpus = len(containerstats)
+    ax.set_ylim(0, numcpus + 1)
+    #ax.set_xlim(0,200)
+    ax.set_xlabel('seconds')
+    ax.set_yticks([1 + i for i in range(numcpus)])
+    ax.set_yticklabels(['CPU %i' % (1 + i) for i in range(numcpus)])
+
+    # TODO: make this work.
+    #plt.legend( [c for c in colors.keys()], loc='right')
+
+    if title is None:
+        title = outfile
+    plt.title(title)
+
+    for ext in exts:
+        print outfile + ' ' + ext
+        plt.savefig(outfile + '.' + ext)
+
 def plot(containerstats, linkstats):
     dir = args.odir
     kinds = ['CDF', 'boxplot']
@@ -346,6 +416,11 @@ def plot(containerstats, linkstats):
                                     kind,
                                     outfile,
                                     metric=prop)
+
+    # plot history of scheduling on each core
+    outfile = 'sched_history'
+    outfile = os.path.join(args.odir, outfile)
+    plot_scheduling_history(containerstats, outfile)
 
     # plot all links' inter-dequeue times
     for kind in kinds:
