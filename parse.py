@@ -55,6 +55,11 @@ parser.add_argument('--plots',
                     default=None,
                     help="comma-sep list in [%s]" % ','.join(DEF_PLOTS))
 
+parser.add_argument('--show',
+                    type=bool,
+                    default=False,
+                    help="show plots?")
+
 args = parser.parse_args()
 
 if not args.plots:
@@ -347,6 +352,8 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
 
     print outfile
     plt.savefig(outfile)
+    if args.show:
+        plt.show()
 
 def plot_container_stat(kvs, kind, outfile, metric, title=None):
     exclude_keys = []
@@ -400,6 +407,8 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
 
     print outfile
     plt.savefig(outfile)
+    if args.show:
+        plt.show()
 
 WIDTH_SCALE_FACTOR = 20  # inches of figure per second of recording.
 
@@ -457,6 +466,8 @@ def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf'
     for ext in exts:
         print outfile + ' ' + ext
         plt.savefig(outfile + '.' + ext)
+    if args.show:
+        plt.show()
 
 def plot(containerstats, linkstats):
     dir = args.odir
@@ -496,4 +507,3 @@ def plot(containerstats, linkstats):
 
 containerstats, linkstats = parse(args.file, args)
 plot(containerstats, linkstats)
-
