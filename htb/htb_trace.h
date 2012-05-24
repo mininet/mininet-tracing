@@ -11,7 +11,7 @@ TRACE_EVENT(mn_htb,
 
             TP_PROTO(const char *action, const char *link, int len),
 
-            TP_ARGS(action, link),
+            TP_ARGS(action, link, len),
 
             TP_STRUCT__entry(
                              __array(char, action, 32)
