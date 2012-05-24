@@ -3,12 +3,14 @@ import re
 from collections import namedtuple, defaultdict
 import os
 import matplotlib as m
-m.use("Agg")
+#m.use("Agg")
 from matplotlib import rc
 import matplotlib.pyplot as plt
 import colorsys
 
 rc('legend', **{'fontsize': 'small'})
+
+DEF_PLOTS = ['cpu', 'history', 'links']
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-f',
@@ -32,13 +34,60 @@ parser.add_argument('--max-ms',
                     default=1e6,
                     dest="max_ms")
 
+parser.add_argument('--samples',
+                    type=int,
+                    default=0)
+
+parser.add_argument('--start',
+                    type=float,
+                    default=None)
+
+parser.add_argument('--end',
+                    type=float,
+                    default=None)
+
+parser.add_argument('--duration',
+                    type=float,
+                    default=None)
+
+parser.add_argument('--plots',
+                    type=str,
+                    default=None,
+                    help="comma-sep list in [%s]" % ','.join(DEF_PLOTS))
+
+parser.add_argument('--show',
+                    type=bool,
+                    default=False,
+                    help="show plots?")
+
 args = parser.parse_args()
+
+if not args.plots:
+    args.plots = DEF_PLOTS
+else:
+    args.plots = args.plots.split(',')
+    for plot in args.plots:
+        if plot not in DEF_PLOTS:
+            raise Exception("unknown plot type: %s" % plot)
+
+# For coloring scheduling histories:
+COLOR_LIST = [c for c in 'bgrcmy']
+
+FIXED_COLOR_MAP = {
+    'h1': 'r',
+    'h2': 'g',
+    'r': 'b',
+    'sysdefault': '#d0d0d0',
+    '/' : '#b0b0b0'
+}
+USE_FIXED_COLOR_MAP = True
 
 pat_sched = re.compile(r'(\d+.\d+): mn_sched_switch: cpu (\d+), prev: ([^,]+), next: ([^\s]+)')
 pat_htb = re.compile(r'\[00(\d)\] (\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+), len: ([^\s]+)')
 
 SchedData = namedtuple('SchedData', ['time', 'cpu', 'prev', 'next'])
 HTBData = namedtuple('HTBData', ['cpu', 'time', 'action', 'link', 'qlen'])
+ContainerInterval = namedtuple('ContainerInterval', ['start', 'duration', 'cpu'])
 
 def avg(lst):
     return sum(lst) * 1.0 / len(lst)
@@ -59,8 +108,12 @@ class LinkStats:
 
 class ContainerStats:
     def __init__(self):
-        self.exectimes = []
-        self.latency = []
+        # Stats
+        self.exectimes = []  # List of scheduled-in durations
+        self.latency = []  # List of gaps between sched-out and next sched-in
+        self.intervals = []  # List of ContainerInterval objects
+
+        # State updated for each SchedData entry processed
         self.last_descheduled = None
         self.start_time = None
         self.name = ''
@@ -99,23 +152,32 @@ class ContainerStats:
             self.name = sched_data.prev
 
         if self.start_time is not None:
-            exectime = del_us(sched_data.time, self.start_time)
-            self.exectimes.append(exectime)
+            exectime_us = del_us(sched_data.time, self.start_time)
+            self.exectimes.append(exectime_us)
+            pi = ContainerInterval(start = float(self.start_time),
+                                 duration = exectime_us * 1.0e-6,
+                                 cpu = sched_data.cpu)
+            self.intervals.append(pi)
 
         self.last_descheduled = sched_data.time
         self.start_time = None
 
     def summary(self):
-        avg_latency_us = avg(self.latency)
-        avg_exectime_us = avg(self.exectimes)
-        print '     Execution time:   %5.3f us' % (avg_exectime_us)
-        print '            Latency:   %5.3f us' % (avg_latency_us)
+        if self.exectimes:
+            avg_exectime_us = avg(self.exectimes)
+            print '     Execution time:   %5.3f us' % (avg_exectime_us)
+        if self.latency:
+            avg_latency_us = avg(self.latency)
+            print '            Latency:   %5.3f us' % (avg_latency_us)
+        if self.intervals:
+            print '      Num Intervals:   %i' % len(self.intervals)
         return
 
 class CPUStats:
     def __init__(self):
         self.cpu = None
         self.current_container = ''
+        # Dict of container names to ContainerStats objects
         self.container_stats = defaultdict(ContainerStats)
 
     def insert(self, sched_data):
@@ -172,7 +234,27 @@ def del_us(t1, t2):
 
     return abs((sec2 - sec1) * 10**6 + (usec2 - usec1))
 
-def parse(f):
+def parse(f, args):
+
+    def in_range(time_val, start, end, duration):
+        """Return True if time is within range.
+
+        If nothing is specified, filter nothing.
+        If start is specified, filter before start.
+        If end is specified, filter after end.
+        If duration is specified, filter after start + duration.
+        """
+        if start is not None:
+            if time_val < start:
+                return False
+        if end is not None:
+            if time_val > end:
+                return False
+        if duration is not None:
+            if time_val > start + duration:
+                return False
+        return True
+
     stats = defaultdict(CPUStats)
     linkstats = defaultdict(LinkStats)
 
@@ -181,20 +263,37 @@ def parse(f):
 
     for l in open(f).xreadlines():
         lineno += 1
+        # End early if samples param given at command line.
+        if args.samples and lineno >= args.samples:
+            break
+
         sched = parse_sched(l)
         htb = parse_htb(l)
 
         try:
             if htb:
-                if htb.action == 'dequeue' and int(htb.qlen) > 0:
-                    linkstats[htb.link].dequeue(htb)
+                htb_time = float(htb.time)
+                if in_range(htb_time, args.start, args.end, args.duration):
+                    if htb.action == 'dequeue' and int(htb.qlen) > 0:
+                        linkstats[htb.link].dequeue(htb)
+                elif args.end and (htb_time > args.end):
+                    break
+                elif args.duration and (htb_time > (args.start + args.duration)):
+                    break
 
             if sched:
-                stats[sched.cpu].insert(sched)
-        except Exception, e:
-            print 'error %s' % str(e)
+                sched_time = float(sched.time)
+                if in_range(sched_time, args.start, args.end, args.duration):
+                    stats[sched.cpu].insert(sched)
+                elif args.end and (sched_time > args.end):
+                    break
+                elif args.duration and (sched_time > (args.start + args.duration)):
+                    break
+
+        except:
             ignored_linenos.append(lineno)
 
+    print 'Processed %d lines.' % lineno
     print 'Ignored %d lines: %s' % (len(ignored_linenos), ignored_linenos)
     for cpu in sorted(stats.keys()):
         print 'CPU: %s' % cpu
@@ -220,6 +319,10 @@ def cdf(values):
 def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
     links = stats.keys()
     links.sort()
+
+    if not links:
+        print "WARNING: no link data, not generating figure %s." % outfile
+        return
 
     fig = plt.figure(figsize=(len(links), 8))
 
@@ -251,6 +354,8 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
 
     print outfile
     plt.savefig(outfile)
+    if args.show:
+        plt.show()
 
 def plot_container_stat(kvs, kind, outfile, metric, title=None):
     exclude_keys = []
@@ -304,6 +409,67 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
 
     print outfile
     plt.savefig(outfile)
+    if args.show:
+        plt.show()
+
+WIDTH_SCALE_FACTOR = 20  # inches of figure per second of recording.
+
+def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf', 'png']):
+    container_index = 0
+    colors = {}  # Dict of container names to color strings
+
+    if USE_FIXED_COLOR_MAP:
+        colors = FIXED_COLOR_MAP
+    # Grab the full list of containers to assign colors.
+    for cpu, cpustats in containerstats.iteritems():
+        for container, stats in cpustats.container_stats.iteritems():
+            if container not in colors:
+                colors[container] = COLOR_LIST[container_index]
+                container_index += 1
+
+    start_time = 1e10
+    end_time = 0.0
+    for cpu, cpustats in containerstats.iteritems():
+        for container, stats in cpustats.container_stats.iteritems():
+            start_time_candidate = stats.intervals[0].start
+            if start_time_candidate < start_time:
+                start_time = start_time_candidate
+            end_time_candidate = stats.intervals[-1].start + stats.intervals[-1].duration
+            if end_time_candidate > end_time:
+                end_time = end_time_candidate
+
+    elapsed = end_time - start_time
+    print "Start: %0.2f, end: %0.2f, length: %0.4f" % (start_time, end_time, elapsed)
+
+    # Plot a history of scheduling events, with one row per CPU.
+    fig = plt.figure(figsize=(max(8, WIDTH_SCALE_FACTOR * elapsed), 8))
+    ax = fig.add_subplot(111)
+    for i, cpu in enumerate(sorted(containerstats.keys())):
+        cpustats = containerstats[cpu]
+        for container, stats in cpustats.container_stats.iteritems():
+            bars = [(d.start, d.duration) for d in stats.intervals]
+            ax.broken_barh(bars, (0.5 + i, 1), facecolors = colors[container],
+                           label = container, linewidth = 0)
+
+    numcpus = len(containerstats)
+    ax.set_ylim(0, numcpus + 1)
+    #ax.set_xlim(0,200)
+    ax.set_xlabel('seconds')
+    ax.set_yticks([1 + i for i in range(numcpus)])
+    ax.set_yticklabels(['CPU %i' % (1 + i) for i in range(numcpus)])
+
+    # TODO: make this work.
+    #plt.legend( [c for c in colors.keys()], loc='right')
+
+    if title is None:
+        title = outfile
+    plt.title(title)
+
+    for ext in exts:
+        print outfile + ' ' + ext
+        plt.savefig(outfile + '.' + ext)
+    if args.show:
+        plt.show()
 
 def plot(containerstats, linkstats):
     dir = args.odir
@@ -311,28 +477,35 @@ def plot(containerstats, linkstats):
     if not os.path.exists(dir):
         os.makedirs(dir)
 
-    # plot cpuX-{exectimes,latency}-{CDF,boxplot}
-    for cpu in sorted(containerstats.keys()):
-        cpustats = containerstats[cpu]
+    if 'cpu' in args.plots:
+        # plot cpuX-{exectimes,latency}-{CDF,boxplot}
+        for cpu in sorted(containerstats.keys()):
+            cpustats = containerstats[cpu]
 
+            for kind in kinds:
+                for prop in ['exectimes', 'latency']:
+                    outfile = 'cpu%s-%s-%s.png' % (cpu, prop, kind)
+                    outfile = os.path.join(args.odir, outfile)
+                    plot_container_stat(cpustats.get(prop),
+                                        kind,
+                                        outfile,
+                                        metric=prop)
+    if 'history' in args.plots:
+        # plot history of scheduling on each core
+        outfile = 'sched_history'
+        outfile = os.path.join(args.odir, outfile)
+        plot_scheduling_history(containerstats, outfile)
+
+    if 'links' in args.plots:
+        # plot all links' inter-dequeue times
         for kind in kinds:
-            for prop in ['exectimes', 'latency']:
-                outfile = 'cpu%s-%s-%s.png' % (cpu, prop, kind)
+            for prop in ['inter_dequeues']:
+                outfile = 'link-%s-%s.png' % (prop, kind)
                 outfile = os.path.join(args.odir, outfile)
-                plot_container_stat(cpustats.get(prop),
-                                    kind,
-                                    outfile,
-                                    metric=prop)
-
-    # plot all links' inter-dequeue times
-    for kind in kinds:
-        for prop in ['inter_dequeues']:
-            outfile = 'link-%s-%s.png' % (prop, kind)
-            outfile = os.path.join(args.odir, outfile)
-            plot_link_stat(linkstats,
-                           prop,
-                           kind, outfile, metric=prop)
+                plot_link_stat(linkstats,
+                               prop,
+                               kind, outfile, metric=prop)
     return
 
-containerstats, linkstats = parse(args.file)
+containerstats, linkstats = parse(args.file, args)
 plot(containerstats, linkstats)
