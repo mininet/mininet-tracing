@@ -201,6 +201,7 @@ def parse(f):
         except:
             ignored_linenos.append(lineno)
 
+    print 'Processed %d lines.' % lineno
     print 'Ignored %d lines: %s' % (len(ignored_linenos), ignored_linenos)
     for cpu in sorted(stats.keys()):
         print 'CPU: %s' % cpu
