@@ -36,6 +36,18 @@ parser.add_argument('--samples',
                     type=int,
                     default=0)
 
+parser.add_argument('--start',
+                    type=float,
+                    default=None)
+
+parser.add_argument('--end',
+                    type=float,
+                    default=None)
+
+parser.add_argument('--duration',
+                    type=float,
+                    default=None)
+
 args = parser.parse_args()
 
 # For coloring scheduling histories:
@@ -201,7 +213,27 @@ def del_us(t1, t2):
 
     return abs((sec2 - sec1) * 10**6 + (usec2 - usec1))
 
-def parse(f):
+def parse(f, args):
+
+    def in_range(time_val, start, end, duration):
+        """Return True if time is within range.
+
+        If nothing is specified, filter nothing.
+        If start is specified, filter before start.
+        If end is specified, filter after end.
+        If duration is specified, filter after start + duration.
+        """
+        if start is not None:
+            if time_val < start:
+                return False
+        if end is not None:
+            if time_val > end:
+                return False
+        if duration is not None:
+            if time_val > start + duration:
+                return False
+        return True
+
     stats = defaultdict(CPUStats)
     linkstats = defaultdict(LinkStats)
 
@@ -210,20 +242,33 @@ def parse(f):
 
     for l in open(f).xreadlines():
         lineno += 1
-        sched = parse_sched(l)
-        htb = parse_htb(l)
-
         # End early if samples param given at command line.
         if args.samples and lineno >= args.samples:
             break
 
+        sched = parse_sched(l)
+        htb = parse_htb(l)
+
         try:
             if htb:
-                if htb.action == 'dequeue':
-                    linkstats[htb.link].dequeue(htb)
+                htb_time = float(htb.time)
+                if in_range(htb_time, args.start, args.end, args.duration):
+                    if htb.action == 'dequeue':
+                        linkstats[htb.link].dequeue(htb)
+                elif args.end and (htb_time > args.end):
+                    break
+                elif args.duration and (htb_time > (args.start + args.duration)):
+                    break
 
             if sched:
-                stats[sched.cpu].insert(sched)
+                sched_time = float(sched.time)
+                if in_range(sched_time, args.start, args.end, args.duration):
+                    stats[sched.cpu].insert(sched)
+                elif args.end and (sched_time > args.end):
+                    break
+                elif args.duration and (sched_time > (args.start + args.duration)):
+                    break
+
         except:
             ignored_linenos.append(lineno)
 
@@ -432,5 +477,5 @@ def plot(containerstats, linkstats):
                            kind, outfile, metric=prop)
     return
 
-containerstats, linkstats = parse(args.file)
+containerstats, linkstats = parse(args.file, args)
 plot(containerstats, linkstats)
