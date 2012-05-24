@@ -10,6 +10,8 @@ import colorsys
 
 rc('legend', **{'fontsize': 'small'})
 
+DEF_PLOTS = ['cpu', 'history', 'links']
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-f',
                     required=True,
@@ -48,7 +50,20 @@ parser.add_argument('--duration',
                     type=float,
                     default=None)
 
+parser.add_argument('--plots',
+                    type=str,
+                    default=None,
+                    help="comma-sep list in [%s]" % ','.join(DEF_PLOTS))
+
 args = parser.parse_args()
+
+if not args.plots:
+    args.plots = DEF_PLOTS
+else:
+    args.plots = args.plots.split(',')
+    for plot in args.plots:
+        if plot not in DEF_PLOTS:
+            raise Exception("unknown plot type: %s" % plot)
 
 # For coloring scheduling histories:
 COLOR_LIST = [c for c in 'bgrcmy']
@@ -449,33 +464,36 @@ def plot(containerstats, linkstats):
     if not os.path.exists(dir):
         os.makedirs(dir)
 
-    # plot cpuX-{exectimes,latency}-{CDF,boxplot}
-    for cpu in sorted(containerstats.keys()):
-        cpustats = containerstats[cpu]
+    if 'cpu' in args.plots:
+        # plot cpuX-{exectimes,latency}-{CDF,boxplot}
+        for cpu in sorted(containerstats.keys()):
+            cpustats = containerstats[cpu]
 
+            for kind in kinds:
+                for prop in ['exectimes', 'latency']:
+                    outfile = 'cpu%s-%s-%s.png' % (cpu, prop, kind)
+                    outfile = os.path.join(args.odir, outfile)
+                    plot_container_stat(cpustats.get(prop),
+                                        kind,
+                                        outfile,
+                                        metric=prop)
+    if 'history' in args.plots:
+        # plot history of scheduling on each core
+        outfile = 'sched_history'
+        outfile = os.path.join(args.odir, outfile)
+        plot_scheduling_history(containerstats, outfile)
+
+    if 'links' in args.plots:
+        # plot all links' inter-dequeue times
         for kind in kinds:
-            for prop in ['exectimes', 'latency']:
-                outfile = 'cpu%s-%s-%s.png' % (cpu, prop, kind)
+            for prop in ['inter_dequeues']:
+                outfile = 'link-%s-%s.png' % (prop, kind)
                 outfile = os.path.join(args.odir, outfile)
-                plot_container_stat(cpustats.get(prop),
-                                    kind,
-                                    outfile,
-                                    metric=prop)
-
-    # plot history of scheduling on each core
-    outfile = 'sched_history'
-    outfile = os.path.join(args.odir, outfile)
-    plot_scheduling_history(containerstats, outfile)
-
-    # plot all links' inter-dequeue times
-    for kind in kinds:
-        for prop in ['inter_dequeues']:
-            outfile = 'link-%s-%s.png' % (prop, kind)
-            outfile = os.path.join(args.odir, outfile)
-            plot_link_stat(linkstats,
-                           prop,
-                           kind, outfile, metric=prop)
+                plot_link_stat(linkstats,
+                               prop,
+                               kind, outfile, metric=prop)
     return
 
 containerstats, linkstats = parse(args.file, args)
 plot(containerstats, linkstats)
+
