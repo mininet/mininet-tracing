@@ -120,6 +120,7 @@ class CPUStats:
     def __init__(self):
         self.cpu = None
         self.current_container = ''
+        # Dict of container names to ContainerStats objects
         self.container_stats = defaultdict(ContainerStats)
 
     def insert(self, sched_data):
