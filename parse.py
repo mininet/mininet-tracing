@@ -43,6 +43,7 @@ pat_htb = re.compile(r'(\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+)')
 
 SchedData = namedtuple('SchedData', ['time', 'cpu', 'prev', 'next'])
 HTBData = namedtuple('HTBData', ['time', 'action', 'link'])
+ContainerInterval = namedtuple('ContainerInterval', ['start', 'duration', 'cpu'])
 
 def avg(lst):
     return sum(lst) * 1.0 / len(lst)
@@ -63,8 +64,12 @@ class LinkStats:
 
 class ContainerStats:
     def __init__(self):
-        self.exectimes = []
-        self.latency = []
+        # Stats
+        self.exectimes = []  # List of scheduled-in durations
+        self.latency = []  # List of gaps between sched-out and next sched-in
+        self.intervals = []  # List of ContainerInterval objects
+
+        # State updated for each SchedData entry processed
         self.last_descheduled = None
         self.start_time = None
         self.name = ''
@@ -103,17 +108,25 @@ class ContainerStats:
             self.name = sched_data.prev
 
         if self.start_time is not None:
-            exectime = del_us(sched_data.time, self.start_time)
-            self.exectimes.append(exectime)
+            exectime_us = del_us(sched_data.time, self.start_time)
+            self.exectimes.append(exectime_us)
+            pi = ContainerInterval(start = self.start_time,
+                                 duration = exectime_us * 1.0e-6,
+                                 cpu = sched_data.cpu)
+            self.intervals.append(pi)
 
         self.last_descheduled = sched_data.time
         self.start_time = None
 
     def summary(self):
-        avg_latency_us = avg(self.latency)
-        avg_exectime_us = avg(self.exectimes)
-        print '     Execution time:   %5.3f us' % (avg_exectime_us)
-        print '            Latency:   %5.3f us' % (avg_latency_us)
+        if self.exectimes:
+            avg_exectime_us = avg(self.exectimes)
+            print '     Execution time:   %5.3f us' % (avg_exectime_us)
+        if self.latency:
+            avg_latency_us = avg(self.latency)
+            print '            Latency:   %5.3f us' % (avg_latency_us)
+        if self.intervals:
+            print '      Num Intervals:   %i' % len(self.intervals)
         return
 
 class CPUStats:
