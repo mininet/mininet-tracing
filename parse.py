@@ -81,8 +81,8 @@ FIXED_COLOR_MAP = {
     'h1': 'r',
     'h2': 'g',
     'r': 'b',
-    'sysdefault': '#d0d0d0',
-    '/' : '#b0b0b0'
+    'sysdefault': '#e0e0ff',
+    '/' : '#efefef'
 }
 USE_FIXED_COLOR_MAP = True
 
@@ -100,6 +100,8 @@ class LinkStats:
     def __init__(self):
         self.last_dequeue = None
         self.inter_dequeues = []
+        self.dequeues = []  # times of dequeues.
+        self.enqueues = []  # times of enqueues
 
     def dequeue(self, htbdata):
         if self.last_dequeue is None:
@@ -109,6 +111,22 @@ class LinkStats:
         delta = del_us(htbdata.time, self.last_dequeue)
         self.inter_dequeues.append(delta)
         self.last_dequeue = htbdata.time
+        self.dequeues.append(float(htbdata.time))
+
+    def enqueue(self, htbdata):
+        self.enqueues.append(float(htbdata.time))
+
+    def summary(self):
+        print '      Enqueues: %i' % len(self.enqueues)
+        print '      Dequeues: %i' % len(self.dequeues)
+        print 'Inter-Dequeues: %i' % len(self.inter_dequeues)
+        if self.dequeues:
+            print 'First Dequeue: %0.3f' % self.dequeues[0]
+            print 'Last Dequeue: %0.3f' % self.dequeues[-1]
+        if self.enqueues:
+            print 'First Enqueue: %0.3f' % self.enqueues[0]
+            print 'Last Enqueue: %0.3f' % self.enqueues[-1]
+        print ''
 
 class ContainerStats:
     def __init__(self):
@@ -293,6 +311,8 @@ def parse(f, args):
                 if in_range(htb_time, args.start, args.end, args.duration, start_time):
                     if htb.action == 'dequeue' and int(htb.qlen) > 0:
                         linkstats[htb.link].dequeue(htb)
+                    elif htb.action == 'enqueue':
+                        linkstats[htb.link].enqueue(htb)
                 elif args.end and (htb_time - start_time > args.end):
                     break
                 elif args.duration and (htb_time - start_time > (args.start + args.duration)):
@@ -310,13 +330,19 @@ def parse(f, args):
         except:
             ignored_linenos.append(lineno)
 
+    def sep():
+        return '-' * 80
+
     print 'Processed %d lines.' % lineno
     print 'Ignored %d lines: %s' % (len(ignored_linenos), ignored_linenos)
     for cpu in sorted(stats.keys()):
         print 'CPU: %s' % cpu
         stats[cpu].summary()
-        print '-' * 80
-
+        print sep()
+    for link in sorted(linkstats.keys()):
+        print 'Link: %s' % link
+        linkstats[link].summary()
+        print sep()
     return stats, linkstats
 
 def cdf(values):
@@ -429,14 +455,15 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
     if args.show:
         plt.show()
 
-WIDTH_SCALE_FACTOR = 20  # inches of figure per second of recording.
+WIDTH_SCALE_FACTOR = 30  # inches of figure per second of recording.
 
-def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf', 'png']):
+def plot_scheduling_history(containerstats, linkstats, outfile, title = None, exts = ['pdf', 'png']):
     container_index = 0
     colors = {}  # Dict of container names to color strings
 
     if USE_FIXED_COLOR_MAP:
         colors = FIXED_COLOR_MAP
+
     # Grab the full list of containers to assign colors.
     for cpu, cpustats in containerstats.iteritems():
         for container, stats in cpustats.container_stats.iteritems():
@@ -444,6 +471,7 @@ def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf'
                 colors[container] = COLOR_LIST[container_index]
                 container_index += 1
 
+    # Find start and end times.
     start_time = 1e10
     end_time = 0.0
     for cpu, cpustats in containerstats.iteritems():
@@ -468,12 +496,32 @@ def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf'
             ax.broken_barh(bars, (0.5 + i, 1), facecolors = colors[container],
                            label = container, linewidth = 0)
 
+    # Add dq/enq operations to history
     numcpus = len(containerstats)
-    ax.set_ylim(0, numcpus + 1)
+    numlinks = len(linkstats)
+    row_index = numcpus
+    Q_COLOR = '#000000'
+    # Keep this small to show fine detail, but large enough to show up
+    # at reasonable resolutions on limited displays.
+    DELTA = 5e-5 
+    for i, link in enumerate(sorted(linkstats.keys())):
+        stats = linkstats[link]
+        # Enqueues on top, Dequeues on bottom.
+        bars = [(d, DELTA) for d in stats.enqueues]
+        ax.broken_barh(bars, (1.0 + row_index, 0.5),
+                       facecolors = Q_COLOR, label = 'enqueues', linewidth = 0)
+        bars = [(d, DELTA) for d in stats.dequeues]
+        ax.broken_barh(bars, (0.5 + row_index, 0.5),
+                       facecolors = Q_COLOR, label = 'dequeues', linewidth = 0)
+        row_index += 1
+
+    ax.set_ylim(0, numcpus + numlinks)
     #ax.set_xlim(0,200)
     ax.set_xlabel('seconds')
-    ax.set_yticks([1 + i for i in range(numcpus)])
-    ax.set_yticklabels(['CPU %i' % (1 + i) for i in range(numcpus)])
+    ax.set_yticks([1 + i for i in range(numcpus + numlinks)])
+    yticklabels = (['CPU %i' % (1 + i) for i in range(numcpus)] + 
+                   ['Link %s' % s for s in sorted(linkstats.keys())])
+    ax.set_yticklabels(yticklabels)
 
     # TODO: make this work.
     #plt.legend( [c for c in colors.keys()], loc='right')
@@ -511,7 +559,7 @@ def plot(containerstats, linkstats):
         # plot history of scheduling on each core
         outfile = 'sched_history'
         outfile = os.path.join(args.odir, outfile)
-        plot_scheduling_history(containerstats, outfile)
+        plot_scheduling_history(containerstats, linkstats, outfile)
 
     if 'links' in args.plots:
         # plot all links' inter-dequeue times
