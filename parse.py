@@ -371,7 +371,7 @@ def plot_scheduling_history(containerstats, outfile, title = None, exts = ['pdf'
     print "Start: %0.2f, end: %0.2f, length: %0.4f" % (start_time, end_time, elapsed)
 
     # Plot a history of scheduling events, with one row per CPU.
-    fig = plt.figure(figsize=(WIDTH_SCALE_FACTOR * elapsed, 8))
+    fig = plt.figure(figsize=(max(8, WIDTH_SCALE_FACTOR * elapsed), 8))
     ax = fig.add_subplot(111)
     for i, cpu in enumerate(sorted(containerstats.keys())):
         cpustats = containerstats[cpu]
