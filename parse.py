@@ -87,7 +87,7 @@ FIXED_COLOR_MAP = {
 USE_FIXED_COLOR_MAP = True
 
 pat_sched = re.compile(r'(\d+.\d+): mn_sched_switch: cpu (\d+), prev: ([^,]+), next: ([^\s]+)')
-pat_htb = re.compile(r'\[00(\d)\] (\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+), len: ([^\s]+)')
+pat_htb = re.compile(r'\[00(\d)\]\s+(\d+.\d+): mn_htb: action: ([^\s]+), link: ([^\s]+), len: ([^\s]+)')
 
 SchedData = namedtuple('SchedData', ['time', 'cpu', 'prev', 'next'])
 HTBData = namedtuple('HTBData', ['cpu', 'time', 'action', 'link', 'qlen'])
