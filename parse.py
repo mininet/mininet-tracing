@@ -3,7 +3,8 @@ import re
 from collections import namedtuple, defaultdict
 import os
 import matplotlib as m
-#m.use("Agg")
+if os.getenv("DISPLAY") == None:
+    m.use("Agg")
 from matplotlib import rc
 import matplotlib.pyplot as plt
 import colorsys
