@@ -54,9 +54,10 @@ trace_start() {
 
 	# Enable tracing
 	echo 1 > tracing_enabled
+	echo 0 > tracing_on
+	echo 1 > tracing_on
 
 	popd
-
 	echo "Writing trace to $traceoutput"
 	(cat /sys/kernel/debug/tracing/trace_pipe > $traceoutput &)
 }
@@ -67,7 +68,7 @@ trace_stop() {
 	echo 0 > tracing_on
 	echo 0 > events/mininet/enable
 	echo "Flushing trace"
-	cat trace_pipe > /dev/null
+	((cat trace_pipe > /dev/null &); sleep 5; killall -9 cat;)
 	echo "Finishing..."
 	wait
 	popd
