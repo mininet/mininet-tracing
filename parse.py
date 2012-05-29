@@ -11,7 +11,7 @@ import colorsys
 
 rc('legend', **{'fontsize': 'small'})
 
-DEF_PLOTS = ['cpu', 'history', 'links']
+DEF_PLOTS = ['cpu', 'history', 'links', 'linkwindow']
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-f',
@@ -44,6 +44,15 @@ parser.add_argument('--start',
                     default=None)
 
 parser.add_argument('--end',
+                    type=float,
+                    default=None)
+
+parser.add_argument('--window-sec', '--window',
+                    dest="window_sec",
+                    type=float,
+                    default=0.01)
+
+parser.add_argument('--hline',
                     type=float,
                     default=None)
 
@@ -97,10 +106,107 @@ ContainerInterval = namedtuple('ContainerInterval', ['start', 'duration', 'cpu']
 def avg(lst):
     return sum(lst) * 1.0 / len(lst)
 
+def pcile(lst, x):
+    lst.sort()
+    pos = int(x * len(lst))
+    return lst[pos]
+
+def pc25(lst):
+    return pcile(lst, 0.25)
+
+def median(lst):
+    return pcile(lst, 0.5)
+
+def pc75(lst):
+    return pcile(lst, 0.75)
+
+def pc90(lst):
+    return pcile(lst, 0.9)
+
+def pc99(lst):
+    return pcile(lst, 0.99)
+
+"""
+Use this class for plotting statistics for every time-bucket that is
+window_sec long.  See example for LinkStats on how to plot this.
+"""
+class WindowStats:
+    def __init__(self, window_sec=0.01, name="Samples"):
+        self.data = []
+        self.first = None
+        self.start_time = None
+        self.name = name
+        self.plot_data_x = []
+        self.plot_data_y = []
+        self.window = window_sec
+
+    def insert(self, time, value):
+        """Insert @event into our sliding window.  Assume that events
+        are inserted sorted by @event.time"""
+        if self.first is None:
+            self.first = time
+        if self.start_time is None:
+            self.start_time = time
+        if time - self.first > self.window:
+            # Window has elapsed
+            self.plot_data_y.append(self.data)
+            start = args.start
+            if start is None:
+                start = 0.0
+            self.plot_data_x.append(start + (time - self.start_time))
+            self.data = []
+            self.first = time
+        self.data.append(value)
+
+    def save(self, outfile, **kwargs):
+        opts = dict(lw=2, xlabel='X',
+                    ylabel='Y', title='title')
+
+        fun_names = ['pc25',
+                     'median',
+                     'mean',
+                     'pc75',
+                     'pc90']
+
+        funs = dict(pc25=pc25,
+                    median=median,
+                    mean=avg,
+                    pc75=pc75,
+                    pc90=pc90)
+
+        opts.update(kwargs)
+
+        width = 24
+        fig = plt.figure(figsize=(width, 8))
+        for name in fun_names:
+            fun = funs[name]
+            plt.plot(self.plot_data_x,
+                     map(fun, self.plot_data_y),
+                     lw=opts['lw'],
+                     label=name)
+
+        plt.xlabel(opts['xlabel'])
+        plt.ylabel(opts['ylabel'])
+        plt.title(opts['title'])
+        plt.grid(True)
+        plt.legend()
+        plt.yscale('log')
+
+        if opts.get('hline', None):
+            plt.axhline(y=opts.get('hline'),
+                        color='orange',
+                        alpha=0.5,
+                        lw=4)
+        if opts.get('xlim', None):
+            plt.xlim(opts['xlim'])
+        plt.savefig(outfile)
+
 class LinkStats:
     def __init__(self):
         self.last_dequeue = None
         self.inter_dequeues = []
+        self.inter_dequeues_timestamp = []
+        self.inter_dequeues_units = 'us'
         self.dequeues = []  # times of dequeues.
         self.enqueues = []  # times of enqueues
 
@@ -111,6 +217,7 @@ class LinkStats:
 
         delta = del_us(htbdata.time, self.last_dequeue)
         self.inter_dequeues.append(delta)
+        self.inter_dequeues_timestamp.append(float(htbdata.time))
         self.last_dequeue = htbdata.time
         self.dequeues.append(float(htbdata.time))
 
@@ -401,6 +508,46 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
     if args.show:
         plt.show()
 
+
+def plot_linkstats_window(stats, prop, title='', window_sec=0.01):
+    links = stats.keys()
+    links.sort()
+
+    if not links:
+        print "WARNING: no link data, not generating figure %s." % outfile
+        return
+
+    xvalues = []
+    for i, link in enumerate(links):
+        print 'plotting stats for %s' % link
+        # For window stats, you need a timeseries of some property to
+        # plot, and the timestamps at which those values were logged.
+        # If the property is X, the timestamps must be in X_timestamp.
+        # The units of X should be in X_units
+
+        # Example: inter_dequeues property has timestamps stored in
+        # inter_dequeues_timestamp, and its units in
+        # inter_dequeues_units.  Check the class for more info.
+
+        values = getattr(stats[link], prop)
+        ts = getattr(stats[link], prop + '_timestamp')
+        unit = getattr(stats[link], prop + '_units')
+
+        # To start with: 10 ms window
+        w = WindowStats(window_sec=window_sec)
+        for t, v in zip(ts, values):
+            w.insert(t, v)
+
+        outfile = 'link%s-prop%s-window.png' % (link, prop)
+        outfile = os.path.join(args.odir, outfile)
+        print outfile
+        w.save(outfile,
+               xlabel='Time (s)',
+               ylabel='%s (%s)' % (prop, unit),
+               hline=args.hline,
+               title="%s; window=%.3fs" % (title, window_sec))
+    return
+
 def plot_container_stat(kvs, kind, outfile, metric, title=None):
     exclude_keys = []
     keys = kvs.keys()
@@ -571,6 +718,12 @@ def plot(containerstats, linkstats):
                 plot_link_stat(linkstats,
                                prop,
                                kind, outfile, metric=prop)
+
+    if 'linkwindow' in args.plots:
+        plot_linkstats_window(linkstats,
+                              prop='inter_dequeues',
+                              title="History of inter-dequeue times",
+                              window_sec=args.window_sec)
     return
 
 containerstats, linkstats = parse(args.file, args)
