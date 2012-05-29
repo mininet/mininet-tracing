@@ -68,6 +68,12 @@ for P in 1; do
         --start 10.0 \
         --duration 1.0 &
     python ../parse.py -f $dir/mntrace_trimmed --odir $dir/plots_full --plots links,cpu,history &
+
+	python ../parse.py -f $dir/mntrace_trimmed --odir $dir/linkwindow \
+		--plots linkwindow \
+		--bw $bw \
+		--window 0.01
+
     clean_text_files $dir
     wait
 done

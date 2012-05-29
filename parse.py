@@ -56,6 +56,10 @@ parser.add_argument('--hline',
                     type=float,
                     default=None)
 
+parser.add_argument('--bw',
+                    type=float,
+                    default=None)
+
 parser.add_argument('--duration',
                     type=float,
                     default=None)
@@ -83,6 +87,10 @@ else:
     for plot in args.plots:
         if plot not in DEF_PLOTS:
             raise Exception("unknown plot type: %s" % plot)
+
+if args.bw and args.bw > 0:
+    # hline annotation, units: microsec
+    args.hline = 1500 * 8 / args.bw
 
 # For coloring scheduling histories:
 COLOR_LIST = [c for c in 'bgrcmy']
