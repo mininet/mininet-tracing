@@ -38,6 +38,8 @@ Bash helper functions
 Here are bash helper functions that you can add to mininet experiment
 shell scripts.  Make sure you call the functions!
 
+These are available in trace.sh.  Include by issuing "source /path/to/trace.sh"
+
 trace_start() {
 	# argument: pass the path to save trace output
 
@@ -75,10 +77,9 @@ trace_stop() {
 }
 
 trace_plot() {
-	# Path to the plotting script in mininet-trace repo
 	# argument: pass the path to saved trace output
-
-	parse=../parse.py
+	dir=${BASH_SOURCE[0]}
+	parse=$dir/parse.py
 	traceoutput=${1-/tmp/mntrace}
 	python $parse -f $traceoutput --odir $(dirname $traceoutput)/plots
 }
