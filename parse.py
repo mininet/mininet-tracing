@@ -73,10 +73,19 @@ parser.add_argument('--plots',
                     default=None,
                     help="comma-sep list in [%s]" % ','.join(DEF_PLOTS))
 
+parser.add_argument('--intf',
+                    default=None,
+                    help="comma-sep list of interface names which will be analysed")
+
 parser.add_argument('--show',
                     type=bool,
                     default=False,
                     help="show plots?")
+
+parser.add_argument('--logscale',
+                    action="store_true",
+                    default=False,
+                    help="plot quantities in logscale (can be x/y-axis depending on the plots)")
 
 args = parser.parse_args()
 
@@ -87,6 +96,11 @@ else:
     for plot in args.plots:
         if plot not in DEF_PLOTS:
             raise Exception("unknown plot type: %s" % plot)
+
+if args.intf is not None:
+    if len(args.intf.strip()) == 0:
+        raise Exception("No interface names specified to filter data.")
+    args.intf = args.intf.split(',')
 
 if args.bw and args.bw > 0:
     # hline annotation, units: microsec
@@ -198,7 +212,8 @@ class WindowStats:
         plt.title(opts['title'])
         plt.grid(True)
         plt.legend()
-        plt.yscale('log')
+        if args.logscale:
+            plt.yscale('log')
 
         if opts.get('hline', None):
             plt.axhline(y=opts.get('hline'),
@@ -423,6 +438,8 @@ def parse(f, args):
 
         try:
             if htb:
+                if args.intf and htb.link not in args.intf:
+                    continue
                 htb_time = float(htb.time)
                 if in_range(htb_time, args.start, args.end, args.duration, start_time):
                     if htb.action == 'dequeue' and int(htb.qlen) > 0:
@@ -492,7 +509,8 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
         if kind == 'CDF':
             x, y = cdf(getattr(stats[link], prop))
             plt.plot(x, y, lw=2, label=link)
-            plt.xscale('log')
+            if args.logscale:
+                plt.xscale('log')
             plt.xlabel(metric)
         else:
             xvalues.append(getattr(stats[link], prop))
@@ -500,7 +518,8 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
     if kind == 'boxplot':
         plt.boxplot(xvalues)
         plt.xticks(range(1, 1+len(links)), links)
-        plt.yscale('log')
+        if args.logscale:
+            plt.yscale('log')
         plt.ylabel(metric)
     else:
         plt.legend(loc="lower right")
@@ -591,13 +610,15 @@ def plot_container_stat(kvs, kind, outfile, metric, title=None):
         nx = len(xvalues)
         plt.boxplot(xvalues)
         plt.xticks(range(1,nx+1), xlabels)
-        plt.yscale('log')
+        if args.logscale:
+            plt.yscale('log')
         plt.ylabel(metric)
         plt.ylim((0, args.max_ms))
     else:
         plt.xlabel(metric)
         plt.xlim((0, args.max_ms))
-        plt.xscale('log')
+        if args.logscale:
+            plt.xscale('log')
         plt.ylabel("Fraction")
         plt.legend(loc="lower right")
 
