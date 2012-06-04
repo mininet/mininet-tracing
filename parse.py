@@ -522,7 +522,7 @@ def plot_linkstats_window(stats, prop, title='', window_sec=0.01):
     links.sort()
 
     if not links:
-        print "WARNING: no link data, not generating figure %s." % outfile
+        print "WARNING: no link data, not generating figure."
         return
 
     xvalues = []
