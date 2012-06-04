@@ -55,6 +55,8 @@ trace_start() {
 	echo 1 > tracing_on
 
 	popd
+
+	mkdir -p $(dirname $traceoutput)
 	warn "Writing trace to $traceoutput"
 	(cat /sys/kernel/debug/tracing/trace_pipe > $traceoutput &)
 }
