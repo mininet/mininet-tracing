@@ -77,6 +77,10 @@ parser.add_argument('--intf',
                     default=None,
                     help="comma-sep list of interface names which will be analysed")
 
+parser.add_argument('--output_link_data',
+                    default=None,
+                    help="save link stats data to a file")
+
 parser.add_argument('--show',
                     type=bool,
                     default=False,
@@ -511,6 +515,12 @@ def plot_link_stat(stats, prop, kind, outfile, metric, title=None):
             plt.plot(x, y, lw=2, label=link)
             if args.logscale:
                 plt.xscale('log')
+
+            if args.output_link_data:
+                f = open(args.output_link_data, 'w')
+                string = "\n".join(map(lambda val: str(val),  getattr(stats[link], prop)))
+                f.write(string)
+                f.close()
             plt.xlabel(metric)
         else:
             xvalues.append(getattr(stats[link], prop))
