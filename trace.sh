@@ -76,8 +76,14 @@ trace_stop() {
 
 trace_plot() {
 	# argument: pass the path to saved trace output
-	dir=${BASH_SOURCE[0]}
-	parse=$dir/parse.py
-	traceoutput=${1-/tmp/mntrace}
+	mntrace=$1
+	# Grab location of this script; leverage assumption that parse.py is in
+	# the same dir to make it easier to call this function.
+	# Trick from:
+	# http://www.cyberciti.biz/faq/unix-linux-script-sourced-by-bash-can-it-determine-its-own-location/
+	this_script_loc="${BASH_SOURCE[0]}"
+	this_script_dir="${this_script_loc%/*}"
+	parse=$this_script_dir/parse.py
+	traceoutput=$mntrace
 	python $parse -f $traceoutput --odir $(dirname $traceoutput)/plots
 }
