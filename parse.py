@@ -12,7 +12,8 @@ import colorsys
 
 rc('legend', **{'fontsize': 'small'})
 
-DEF_PLOTS = ['cpu', 'history', 'links', 'linkwindow']
+ALL_PLOTS = ['cpu', 'history', 'links', 'linkwindow']
+DEF_PLOTS = ['cpu', 'links', 'linkwindow']  # Adding 'history' is expensive
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-f',
