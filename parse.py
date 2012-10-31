@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import argparse
 import re
 from collections import namedtuple, defaultdict
